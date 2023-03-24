@@ -36,8 +36,9 @@ export class CBOREncoder {
     private lastLength: u32
 
     constructor() {
-        this.data = new ArrayBuffer(256);
-        this.dataView = new DataView(this.data);
+        const _arrayBuff = new ArrayBuffer(256);
+        this.data = _arrayBuff;
+        this.dataView = new DataView(_arrayBuff);
         this.offset = 0
         this.lastLength = 0
     }
