@@ -7,7 +7,8 @@
   "author": "Zondax AG",
   "license": "MIT",
   "devDependencies": {
-    "assemblyscript": "^0.20.8"
+    "@as-pect/cli": "^8.0.1",
+    "assemblyscript": "^0.25.0"
   },
   "publishConfig": {
     "access": "public"
@@ -18,7 +19,8 @@
     "asbuild": "npm run asbuild:debug && npm run asbuild:release",
     "asbuild:test:debug": "asc assembly/test_index.ts --target debug --exportRuntime",
     "asbuild:test": "npm run asbuild:test:debug",
-    "test": "node tests/encoding.test.js && node tests/decoding.test.js"
+    "test": "node tests/encoding.test.js && node tests/decoding.test.js && node tests/rainCbor.test.js",
+    "test:rain": "npm run asbuild:test && clear; node tests/rainCbor.test.js"
   },
   "type": "module",
   "exports": {
