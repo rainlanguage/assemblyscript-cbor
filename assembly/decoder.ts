@@ -1,297 +1,457 @@
-/********************************************************************************
- The MIT License (MIT)
-
- Copyright (c) 2014 Patrick Gansterer <paroga@paroga.com>
- Copyright (c) 2022 Zondax AG
-
- Permission is hereby granted, free of charge, to any person obtaining a copy
- of this software and associated documentation files (the "Software"), to deal
- in the Software without restriction, including without limitation the rights
- to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- copies of the Software, and to permit persons to whom the Software is
- furnished to do so, subject to the following conditions:
-
- The above copyright notice and this permission notice shall be included in all
- copies or substantial portions of the Software.
-
- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- SOFTWARE.
- *********************************************************************************/
-
-// Latest commit used --> https://github.com/paroga/cbor-js/commit/65dc49611107db83aff8308a6b381f4d7933824b
-
-import {Arr, Handler, JSONHandler, Value} from "./types";
-
-const POW_2_24 = 5.960464477539063e-8
-const POW_2_32 = 4294967296
+import { Arr, Handler, JSONHandler, Sequence, Value } from "./types";
+const POW_2_24 = 5.960464477539063e-8;
+const POW_2_32 = 4294967296;
 const POW_2_53 = 9007199254740992;
 
-export class CBORDecoder{
-    private data: ArrayBuffer
-    private dataView: DataView
-    private offset: u32
-    private lastKey: string
-    private handler: Handler
+/**
+ * Message error when the data is bad formed on some point
+ */
+const BAD_FORMED = "DATA_BAD_FORMED";
 
-    constructor(serializedData: ArrayBuffer) {
-        this.data = serializedData
-        this.dataView = new DataView(this.data);
-        this.offset = 0;
-        this.lastKey = "";
-        this.handler = new Handler()
+/**
+ * Message error for not supporting keys differente than Unsigned (major type 0)
+ */
+const ONLY_UNSIGNED_KEYS = "ONLY_UNSIGNED_KEYS";
+
+/**
+ * Message error for not supporting deeps Array or Maps inside a Map or Array
+ */
+const NOT_SUPDEEP_ARR_MAP = "NOT_SUP_DEEP_ARR_MAP";
+
+export class CBORDecoder {
+  private readonly data: ArrayBuffer;
+  private readonly dataView: DataView;
+  private readonly handler: Handler;
+  private readonly dataLength: u32;
+  private offset: u32;
+  private isError: boolean = false;
+  private errorMessage: string = "";
+  private isSequence: boolean = false;
+  private sequence: Sequence = new Sequence();
+
+  constructor(serializedData: ArrayBuffer) {
+    this.data = serializedData;
+    this.dataView = new DataView(serializedData);
+    this.handler = new Handler();
+    this.dataLength = this.dataView.byteLength;
+    this.offset = 0;
+  }
+
+  private setError(message: string): Value {
+    this.errorMessage = message;
+    this.isError = true;
+    this.handler.reset();
+    return Value.Error(message);
+  }
+
+  private commitRead(length: u32): void {
+    this.offset += length;
+  }
+
+  private readArrayBuffer(length: u32): Uint8Array {
+    const value = Uint8Array.wrap(this.data, this.offset, length);
+    this.commitRead(length);
+    return value;
+  }
+
+  private readFloat16(): f32 {
+    const tempArrayBuffer = new ArrayBuffer(4);
+    const tempDataView = new DataView(tempArrayBuffer);
+    const value = this.readUint16();
+
+    const sign = value & 0x8000;
+    let exponent = value & 0x7c00;
+    const fraction = value & 0x03ff;
+
+    if (exponent === 0x7c00) exponent = 0xff << 10;
+    else if (exponent !== 0) exponent += (127 - 15) << 10;
+    else if (fraction !== 0) return f32((sign ? -1 : 1) * fraction * POW_2_24);
+
+    tempDataView.setUint32(
+      0,
+      (sign << 16) | (exponent << 13) | (fraction << 13)
+    );
+    return tempDataView.getFloat32(0);
+  }
+
+  private readFloat32(): f32 {
+    const value = this.dataView.getFloat32(this.offset);
+    this.commitRead(4);
+    return value;
+  }
+  private readFloat64(): f64 {
+    const value = this.dataView.getFloat64(this.offset);
+    this.commitRead(8);
+    return value;
+  }
+
+  private readUint8(): u8 {
+    const value = this.dataView.getUint8(this.offset);
+    this.commitRead(1);
+    return value;
+  }
+
+  private readUint16(): u16 {
+    const value = this.dataView.getUint16(this.offset);
+    this.commitRead(2);
+    return value;
+  }
+
+  private readUint32(): u32 {
+    const value = this.dataView.getUint32(this.offset);
+    this.commitRead(4);
+    return value;
+  }
+
+  private readUint64(): u64 {
+    const hi = this.readUint32();
+    const lo = this.readUint32();
+    return hi * POW_2_32 + lo;
+  }
+
+  private readBreak(): boolean {
+    if (this.dataView.getUint8(this.offset) !== 0xff) return false;
+    this.offset += 1;
+    return true;
+  }
+
+  private readLength(additionalInformation: u64): u64 {
+    if (additionalInformation < 24) {
+      return u64(additionalInformation);
+    }
+    if (additionalInformation === 24 && this.availableData(1)) {
+      return u64(this.readUint8());
+    }
+    if (additionalInformation === 25 && this.availableData(2)) {
+      return u64(this.readUint16());
+    }
+    if (additionalInformation === 26 && this.availableData(4)) {
+      return u64(this.readUint32());
+    }
+    if (additionalInformation === 27 && this.availableData(8)) {
+      return u64(this.readUint64());
+    }
+    if (additionalInformation === 31) {
+      return -1;
     }
 
-    private commitRead(length: u32):void {
-        this.offset += length;
+    this.setError(BAD_FORMED);
+
+    return -1;
+  }
+
+  private readIndefiniteStringLength(majorType: u64): i64 {
+    const initialByte = this.readUint8();
+    if (initialByte === 0xff) return -1;
+    let length = this.readLength(initialByte & 0x1f);
+    if (length < 0 || initialByte >> 5 !== majorType) {
+      this.setError(BAD_FORMED);
+
+      return -1;
+    }
+    return length;
+  }
+
+  private availableData(amount: number): bool {
+    return this.offset + amount <= this.dataLength;
+  }
+
+  /**
+   * Only support Unsigned/Number keys. TODO: Add more support for other key (like strings)
+   */
+  private getKey(): u64 {
+    const initialByte = this.readUint8();
+    const majorType = initialByte >> 5;
+    const additionalInformation = initialByte & 0x1f;
+    let length = this.readLength(additionalInformation);
+
+    if (length === -1) {
+      // Error found when reading length
+      this.setError(BAD_FORMED);
+      return -1;
     }
 
-    private readArrayBuffer(length:u32): Uint8Array {
-        const value = Uint8Array.wrap(this.data, this.offset, length)
-        this.commitRead(length);
-        return value
+    if (majorType === 0) {
+      return length;
+    } else {
+      this.setError(ONLY_UNSIGNED_KEYS);
+      return -1;
+    }
+  }
+
+  private getValue(): Value {
+    const initialByte = this.readUint8();
+    const majorType = initialByte >> 5;
+    const additionalInformation = initialByte & 0x1f;
+    let length = this.readLength(additionalInformation);
+
+    if (length === -1) {
+      return this.setError(BAD_FORMED);
     }
 
-    private readFloat16():f32 {
-        const tempArrayBuffer = new ArrayBuffer(4);
-        const tempDataView = new DataView(tempArrayBuffer);
-        const value = this.readUint16();
+    if (majorType == 0) {
+      // Unsigned
+      //
+      const obj = Value.Unsigned(length);
+      return obj;
+    } else if (majorType == 2) {
+      // Byte string
+      //
+      if (length < 0) {
+        // Support for Indefinite Lengths for Byte string.
+        const elements = new Array<Uint8Array>();
+        let fullArrayLength = 0;
 
-        const sign = value & 0x8000;
-        let exponent = value & 0x7c00;
-        const fraction = value & 0x03ff;
+        // Update and check new length
+        length = this.readIndefiniteStringLength(majorType);
+        if (length === -1) return this.setError(BAD_FORMED);
 
-        if (exponent === 0x7c00)
-            exponent = 0xff << 10;
-        else if (exponent !== 0)
-            exponent += (127 - 15) << 10;
-        else if (fraction !== 0)
-            return f32((sign ? -1 : 1) * fraction * POW_2_24)
+        while (length >= 0) {
+          fullArrayLength += i32(length);
+          elements.push(this.readArrayBuffer(u32(length)));
 
-        tempDataView.setUint32(0, sign << 16 | exponent << 13 | fraction << 13);
-        return tempDataView.getFloat32(0);
+          // Update and check new length
+          length = this.readIndefiniteStringLength(majorType);
+          if (length === -1) return this.setError(BAD_FORMED);
+        }
+        const fullArray = new Uint8Array(fullArrayLength);
+        let fullArrayOffset = 0;
+        for (let i = 0; i < elements.length; ++i) {
+          fullArray.set(elements[i], fullArrayOffset);
+          fullArrayOffset += elements[i].length;
+        }
+        const obj = Value.Bytes(fullArray);
+        return obj;
+      } else {
+        // Get the bytes string data from the know length
+        const arr = this.readArrayBuffer(u32(length));
+        const obj = Value.Bytes(arr);
+
+        return obj;
+      }
+    } else if (majorType == 3) {
+      // Text string
+      //
+      let data: Uint8Array = new Uint8Array(0);
+      if (length < 0) {
+        // Support for Indefinite Lengths for Text string.
+
+        // Update and check new length
+        length = this.readIndefiniteStringLength(majorType);
+        if (length === -1) return this.setError(BAD_FORMED);
+
+        while (length >= 0) {
+          let tmp = new Uint8Array((data.byteLength + length) as u32);
+          tmp.set(data);
+          tmp.set(this.readArrayBuffer(length as u32), data.byteLength);
+          data = tmp;
+
+          // Update and check new length
+          length = this.readIndefiniteStringLength(majorType);
+          if (length === -1) return this.setError(BAD_FORMED);
+        }
+      } else {
+        // Get the text string from the know length
+        let tmp = new Uint8Array(length as u32);
+        tmp.set(this.readArrayBuffer(length as u32));
+        data = tmp;
+      }
+
+      const stringParsed = String.UTF8.decode(data.buffer);
+      const obj = Value.String(stringParsed);
+
+      return obj;
+    } else {
+      //
+      return this.setError(NOT_SUPDEEP_ARR_MAP);
+    }
+  }
+
+  private deserialize(): void {
+    const initialByte = this.readUint8();
+    const majorType = initialByte >> 5;
+    const additionalInformation = initialByte & 0x1f;
+
+    if (majorType === 7) {
+      switch (additionalInformation) {
+        case 25:
+          this.handler.setFloat("", this.readFloat16());
+          return;
+        case 26:
+          this.handler.setFloat("", this.readFloat32());
+          return;
+        case 27:
+          this.handler.setFloat("", this.readFloat64());
+          return;
+      }
     }
 
-    private readFloat32():f32 {
-        const value = this.dataView.getFloat32(this.offset)
-        this.commitRead(4 );
-        return value
-    }
-    private readFloat64():f64 {
-        const value = this.dataView.getFloat64(this.offset)
-        this.commitRead(8 );
-        return value
+    let length = this.readLength(additionalInformation);
+
+    if (length === -1) {
+      this.setError(BAD_FORMED);
+      return;
     }
 
-    private readUint8():u8 {
-        const value = this.dataView.getUint8(this.offset)
-        this.commitRead(1 );
-        return value
-    }
+    switch (majorType) {
+      case 0: {
+        this.handler.setUnsigned("", length);
+        break;
+      }
+      case 1: {
+        this.handler.setInteger("", -1 - length);
+        break;
+      }
+      case 2: {
+        if (length < 0) {
+          const elements = new Array<Uint8Array>();
+          let fullArrayLength = 0;
 
-    private readUint16():u16 {
-        const value = this.dataView.getUint16(this.offset)
-        this.commitRead(2 );
-        return value
-    }
+          // Update and check new length
+          length = this.readIndefiniteStringLength(majorType);
+          if (length === -1) {
+            this.setError(BAD_FORMED);
+            return;
+          }
 
-    private readUint32():u32 {
-        const value = this.dataView.getUint32(this.offset)
-        this.commitRead(4 );
-        return value
-    }
+          while (length >= 0) {
+            fullArrayLength += i32(length);
+            elements.push(this.readArrayBuffer(u32(length)));
 
-    private readUint64():u64 {
-        const hi = this.readUint32()
-        const lo = this.readUint32()
-        return  hi * POW_2_32 + lo;
-    }
-
-    private readBreak():boolean {
-        if (this.dataView.getUint8(this.offset) !== 0xff)
-            return false;
-        this.offset += 1;
-        return true;
-    }
-
-    private readLength(additionalInformation:u64):i64 {
-        if (additionalInformation < 24)
-            return i64(additionalInformation);
-        if (additionalInformation === 24)
-            return i64(this.readUint8());
-        if (additionalInformation === 25)
-            return i64(this.readUint16());
-        if (additionalInformation === 26)
-            return i64(this.readUint32());
-        if (additionalInformation === 27)
-            return i64(this.readUint64());
-        if (additionalInformation === 31)
-            return -1;
-        throw "Invalid length encoding";
-    }
-
-    private readIndefiniteStringLength(majorType:u64):i64 {
-        const initialByte = this.readUint8();
-        if (initialByte === 0xff)
-            return -1;
-        let length = this.readLength(initialByte & 0x1f);
-        if (length < 0 || (initialByte >> 5) !== majorType)
-            throw "Invalid indefinite length element";
-        return length;
-    }
-
-    private deserialize():void {
-        const initialByte = this.readUint8();
-        const majorType = initialByte >> 5;
-        const additionalInformation = initialByte & 0x1f;
-        //let i;
-        let length: i64;
-
-        if (majorType === 7) {
-            switch (additionalInformation) {
-                case 25:
-                    this.handler.setFloat(this.lastKey, this.readFloat16())
-                    this.lastKey = ""
-                    return
-                case 26:
-                    this.handler.setFloat(this.lastKey, this.readFloat32())
-                    this.lastKey = ""
-                    return
-                case 27:
-                    this.handler.setFloat(this.lastKey, this.readFloat64())
-                    this.lastKey = ""
-                    return
+            // Update and check new length
+            length = this.readIndefiniteStringLength(majorType);
+            if (length === -1) {
+              this.setError(BAD_FORMED);
+              return;
             }
+          }
+          const fullArray = new Uint8Array(fullArrayLength);
+          let fullArrayOffset = 0;
+          for (let i = 0; i < elements.length; ++i) {
+            fullArray.set(elements[i], fullArrayOffset);
+            fullArrayOffset += elements[i].length;
+          }
+
+          this.handler.setBytes("", fullArray);
+          break;
         }
 
-        length = this.readLength(additionalInformation);
-        if (length < 0 && (majorType < 2 || u8(6) < majorType))
-            throw "Invalid length";
+        const arr = this.readArrayBuffer(u32(length));
+        this.handler.setBytes("", arr);
 
-        switch (majorType) {
-            case 0:
-                this.handler.setInteger(this.lastKey, length);
-                this.lastKey = ""
-                return
-            case 1:
-                this.handler.setInteger(this.lastKey, -1 - length);
-                this.lastKey = ""
-                return
-            case 2:
-                if (length < 0) {
-                    const elements = new Array<Uint8Array>();
-                    let fullArrayLength = 0;
-                    while ((length = this.readIndefiniteStringLength(majorType)) >= 0) {
-                        fullArrayLength += i32(length);
-                        elements.push(this.readArrayBuffer(u32(length)));
-                    }
-                    const fullArray = new Uint8Array(fullArrayLength);
-                    let fullArrayOffset = 0;
-                    for (let i = 0; i < elements.length; ++i) {
-                        fullArray.set(elements[i], fullArrayOffset);
-                        fullArrayOffset += elements[i].length;
-                    }
+        break;
+      }
+      case 3: {
+        let data: Uint8Array = new Uint8Array(0);
+        if (length < 0) {
+          // Update and check new length
+          length = this.readIndefiniteStringLength(majorType);
+          if (length === -1) {
+            this.setError(BAD_FORMED);
+            return;
+          }
 
-                    this.handler.setBytes(this.lastKey, fullArray)
-                    this.lastKey = ""
-                    return
-                }
+          while (length >= 0) {
+            let tmp = new Uint8Array((data.byteLength + length) as u32);
+            tmp.set(data);
+            tmp.set(this.readArrayBuffer(length as u32), data.byteLength);
+            data = tmp;
 
-                const arr = this.readArrayBuffer(u32(length));
-                this.handler.setBytes(this.lastKey, arr)
-                this.lastKey = ""
+            // Update and check new length
+            length = this.readIndefiniteStringLength(majorType);
+            if (length === -1) {
+              this.setError(BAD_FORMED);
+              return;
+            }
+          }
+        } else {
+          let tmp = new Uint8Array(length as u32);
+          tmp.set(this.readArrayBuffer(length as u32));
+          data = tmp;
+        }
 
-                return
-            case 3:
-                let data: Uint8Array = new Uint8Array(0);
-                if (length < 0) {
-                    while ((length = this.readIndefiniteStringLength(majorType)) >= 0) {
-                        let tmp = new Uint8Array((data.byteLength+length) as u32)
-                        tmp.set(data)
-                        tmp.set(this.readArrayBuffer(length as u32), data.byteLength)
-                        data = tmp
-                    }
-                } else {
-                    let tmp = new Uint8Array(length as u32)
-                    tmp.set(this.readArrayBuffer(length as u32))
-                    data = tmp
-                }
+        this.handler.setString("", String.UTF8.decode(data.buffer));
 
-                if(this.handler.stack.length > 0){
-                    if (this.handler.peek.isObj) {
-                        if (this.lastKey == "") {
-                            this.lastKey = String.UTF8.decode(data.buffer)
-                        } else {
-                            this.handler.setString(this.lastKey, String.UTF8.decode(data.buffer))
-                            this.lastKey = ""
-                        }
-                    }
-                    if(this.handler.peek.isArr){
-                        this.handler.setString(this.lastKey, String.UTF8.decode(data.buffer))
-                        this.lastKey = ""
-                    }
-                }
-                else
-                    this.handler.setString("", String.UTF8.decode(data.buffer))
+        break;
+      }
+      case 4: {
+        this.handler.pushArray("");
 
-                return
-            case 4:
-                this.handler.pushArray(this.lastKey)
-                this.lastKey = ""
+        if (length < 0) {
+          while (!this.readBreak()) this.deserialize();
+        } else {
+          for (let i = u64(0); i < length; ++i) this.deserialize();
+        }
+        this.handler.popArray();
+        return;
+      }
+      case 5: {
+        this.handler.pushObject("");
 
-                if (length < 0) {
-                    while (!this.readBreak())
-                        this.deserialize()
-                } else {
-                    for (let i = 0; i < length; ++i)
-                        this.deserialize()
-                }
-                this.handler.popArray()
-                return
-            case 5:
-                this.handler.pushObject(this.lastKey)
-                this.lastKey = ""
-                for (let i = 0; i < length || length < 0 && !this.readBreak(); ++i) {
-                    // Deserialize key
-                    this.deserialize()
-                    // Deserialize value
-                    this.deserialize()
-                }
-                this.handler.popObject()
-                return
-            case 6:
-                //return tagger(decodeItem(), length);
-                throw `tags not implemented`
-            case 7:
-                switch (u32(length)) {
-                    case 20:
-                        this.handler.setBoolean(this.lastKey, false);
-                        this.lastKey = ""
-                        return
-                    case 21:
-                        this.handler.setBoolean(this.lastKey, true);
-                        this.lastKey = ""
-                        return
-                    case 22:
-                        this.handler.setNull(this.lastKey);
-                        this.lastKey = ""
-                        return
-                    case 23:
-                        this.handler.setUndefined(this.lastKey);
-                        this.lastKey = ""
-                        return
-                    default:
-                        throw `simple values not implemented`
-                }
+        for (
+          let i = u64(0);
+          i < length || (length < 0 && !this.readBreak());
+          ++i
+        ) {
+          // Deserialize key
+          const key = this.getKey();
+          if (key === -1) return;
+
+          // Deserialize value
+          const value = this.getValue();
+          if (value.isError) return;
+          this.handler.addValue(key.toString(), value);
+        }
+        this.handler.popObject();
+
+        return;
+      }
+      case 6:
+        throw `tags not implemented`;
+
+      case 7:
+        switch (u32(length)) {
+          case 20:
+            this.handler.setBoolean("", false);
+            return;
+          case 21:
+            this.handler.setBoolean("", true);
+            return;
+          case 22:
+            this.handler.setNull("");
+            return;
+          case 23:
+            this.handler.setUndefined("");
+            return;
+          default:
+            throw `simple values not implemented`;
         }
     }
+  }
 
-    parse(): Value{
-        this.deserialize()
-        return this.handler.peek
+  parse(): Value {
+    this.deserialize();
+
+    if (this.isError) {
+      // It has an error on running
+      return Value.Error(this.errorMessage);
     }
+
+    if (this.offset < this.dataLength) {
+      this.isSequence = true;
+      this.sequence.push(this.handler.peek);
+      this.handler.reset();
+      while (this.offset < this.dataLength) {
+        this.deserialize();
+        this.sequence.push(this.handler.peek);
+        this.handler.reset();
+      }
+    }
+
+    if (this.isSequence) {
+      return this.sequence;
+    }
+
+    return this.handler.peek;
+  }
 }
