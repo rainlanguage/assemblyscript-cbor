@@ -29,6 +29,8 @@ export function decode(data: string): Value {
   const decoder = new CBORDecoder(buff);
   const res = decoder.parse();
 
+  console.log(`Res: ${res}`);
+
   return res;
 
   // console.log(`res.isArr: ${res.isArr}`);
@@ -64,6 +66,7 @@ export function decode(data: string): Value {
   // return u64(a).toString();
   // return a;
 }
+
 export function decodeRainCBOR_test(): bool {
   // Use: https://cbor.me/
   const rainSequenceEncoded =

@@ -336,7 +336,14 @@ export class CBORDecoder {
           break;
         }
 
+        const dataAvailable = this.dataLength - this.offset;
+        if (dataAvailable < length) {
+          this.setError(BAD_FORMED);
+          return;
+        }
+
         const arr = this.readArrayBuffer(u32(length));
+        arr.length == 0;
         this.handler.setBytes("", arr);
 
         break;
@@ -406,8 +413,10 @@ export class CBORDecoder {
 
         return;
       }
-      case 6:
-        throw `tags not implemented`;
+      case 6: {
+        this.setError("Tags not implemented");
+        return;
+      }
 
       case 7:
         switch (u32(length)) {
@@ -423,8 +432,10 @@ export class CBORDecoder {
           case 23:
             this.handler.setUndefined("");
             return;
-          default:
-            throw `simple values not implemented`;
+          default: {
+            this.setError("simple values not implemented");
+            return;
+          }
         }
     }
   }
