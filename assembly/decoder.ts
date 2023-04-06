@@ -4,6 +4,11 @@ const POW_2_32 = 4294967296;
 const POW_2_53 = 9007199254740992;
 
 /**
+ * Message error when the data is empty
+ */
+const DATA_EMPTY = "DATA_EMPTY";
+
+/**
  * Message error when the data is bad formed on some point
  */
 const BAD_FORMED = "DATA_BAD_FORMED";
@@ -441,6 +446,10 @@ export class CBORDecoder {
   }
 
   parse(): Value {
+    if (this.dataLength <= 0) {
+      return Value.Error(DATA_EMPTY);
+    }
+
     this.deserialize();
 
     if (this.isError) {
