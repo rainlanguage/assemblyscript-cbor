@@ -112,8 +112,8 @@ jobs:
         if: steps.push.outcome == 'success'
         # specify the name of the archive as well as the folders and files to archive
         run: |
-          zip -r assemblyscript-cbor-${{ env.NEW_VERSION }}.zip assembly build src README.md package.json
-          tar -czvf assemblyscript-cbor-${{ env.NEW_VERSION }}.tar.gz assembly build src README.md package.json
+          zip -r assemblyscript-cbor-${{ env.NEW_VERSION }}.zip assembly build README.md package.json
+          tar -czvf assemblyscript-cbor-${{ env.NEW_VERSION }}.tar.gz assembly build README.md package.json
 
       # Create gitHub release with built package archives
       - name: Create GitHub Release
