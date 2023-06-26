@@ -24,12 +24,18 @@ export function stringToArrayBuffer(val: string): ArrayBuffer {
   return buff;
 }
 
-export function decode(data: string): Value {
+export function decode_assertError(data: string): boolean {
   const buff = stringToArrayBuffer(data);
   const decoder = new CBORDecoder(buff);
   const res = decoder.parse();
 
-  console.log(`Res: ${res}`);
+  return res.isError;
+}
+
+export function decode(data: string): Value {
+  const buff = stringToArrayBuffer(data);
+  const decoder = new CBORDecoder(buff);
+  const res = decoder.parse();
 
   return res;
 
