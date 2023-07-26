@@ -56,10 +56,10 @@ assert.equal(result, true);
 result = decodeArrayInArray();
 assert.deepEqual(result, [100n]);
 
-// TODO: Support string keys on maps (not supported yet)
-// result = decodeObject();
-// assert.equal(result, true);
+result = decodeObject();
+assert.equal(result, true);
 
+// TODO: Support deeps Array or Maps inside a Map or Array
 // result = decodeAllInObj();
 // assert.equal(result, true);
 

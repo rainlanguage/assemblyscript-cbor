@@ -16,7 +16,7 @@ const BAD_FORMED = "DATA_BAD_FORMED";
 /**
  * Message error for not supporting keys differente than Unsigned (major type 0)
  */
-const ONLY_UNSIGNED_KEYS = "ONLY_UNSIGNED_KEYS";
+const TYPE_KEY_NOT_SUPPORTED = "TYPE_KEY_NOT_SUPPORTED";
 
 /**
  * Message error for not supporting deeps Array or Maps inside a Map or Array
@@ -164,23 +164,44 @@ export class CBORDecoder {
   /**
    * Only support Unsigned/Number keys. TODO: Add more support for other key (like strings)
    */
-  private getKey(): u64 {
+  private getKey(): Value {
     const initialByte = this.readUint8();
-    const majorType = initialByte >> 5;
-    const additionalInformation = initialByte & 0x1f;
-    let length = this.readLength(additionalInformation);
 
-    if (length === -1) {
+    const majorType = initialByte >> 5;
+
+    const additionalInformation = initialByte & 0x1f;
+
+    let argumentValue = this.readLength(additionalInformation);
+
+    if (argumentValue === -1) {
       // Error found when reading length
-      this.setError(BAD_FORMED);
-      return -1;
+      return this.setError(BAD_FORMED);
     }
 
-    if (majorType === 0) {
-      return length;
-    } else {
-      this.setError(ONLY_UNSIGNED_KEYS);
-      return -1;
+    switch (majorType) {
+      case 0: {
+        // The argument value obtained by `readLength` in major types 0, it is
+        // already the unsigned number.
+        return Value.Unsigned(argumentValue);
+      }
+
+      case 3: {
+        // The argument value obtained by `readLength` in major types 3, it is
+        // the next bytes to read (that contains the bytes text).
+        const valueString = this.readString(argumentValue);
+
+        if (!this.isError) {
+          // this.handler.setString("", valueString);
+          return Value.String(valueString);
+        }
+
+        // If the above conditional is not met, means that the data is bad
+        // encoded. The error is already set when  this.readString was called
+        return Value.Error(BAD_FORMED);
+      }
+
+      default:
+        return this.setError(TYPE_KEY_NOT_SUPPORTED);
     }
   }
 
@@ -194,82 +215,120 @@ export class CBORDecoder {
       return this.setError(BAD_FORMED);
     }
 
-    if (majorType == 0) {
-      // Unsigned
-      //
-      const obj = Value.Unsigned(length);
-      return obj;
-    } else if (majorType == 2) {
-      // Byte string
-      //
-      if (length < 0) {
-        // Support for Indefinite Lengths for Byte string.
-        const elements = new Array<Uint8Array>();
-        let fullArrayLength = 0;
+    switch (majorType) {
+      case 0: {
+        return Value.Unsigned(length);
+      }
 
-        // Update and check new length
-        length = this.readIndefiniteStringLength(majorType);
-        if (length === -1) return this.setError(BAD_FORMED);
+      case 1: {
+        return Value.Integer(-1 - length);
+      }
 
-        while (length >= 0) {
-          fullArrayLength += i32(length);
-          elements.push(this.readArrayBuffer(u32(length)));
+      case 2: {
+        if (length < 0) {
+          // Support for Indefinite Lengths for Byte string.
+          const elements = new Array<Uint8Array>();
+          let fullArrayLength = 0;
 
           // Update and check new length
           length = this.readIndefiniteStringLength(majorType);
           if (length === -1) return this.setError(BAD_FORMED);
-        }
-        const fullArray = new Uint8Array(fullArrayLength);
-        let fullArrayOffset = 0;
-        for (let i = 0; i < elements.length; ++i) {
-          fullArray.set(elements[i], fullArrayOffset);
-          fullArrayOffset += elements[i].length;
-        }
-        const obj = Value.Bytes(fullArray);
-        return obj;
-      } else {
-        // Get the bytes string data from the know length
-        const arr = this.readArrayBuffer(u32(length));
-        const obj = Value.Bytes(arr);
 
-        return obj;
+          while (length >= 0) {
+            fullArrayLength += i32(length);
+            elements.push(this.readArrayBuffer(u32(length)));
+
+            // Update and check new length
+            length = this.readIndefiniteStringLength(majorType);
+            if (length === -1) return this.setError(BAD_FORMED);
+          }
+          const fullArray = new Uint8Array(fullArrayLength);
+          let fullArrayOffset = 0;
+          for (let i = 0; i < elements.length; ++i) {
+            fullArray.set(elements[i], fullArrayOffset);
+            fullArrayOffset += elements[i].length;
+          }
+          const obj = Value.Bytes(fullArray);
+          return obj;
+        } else {
+          // Get the bytes string data from the know length
+          const arr = this.readArrayBuffer(u32(length));
+          const obj = Value.Bytes(arr);
+
+          return obj;
+        }
       }
-    } else if (majorType == 3) {
-      // Text string
-      //
-      let data: Uint8Array = new Uint8Array(0);
-      if (length < 0) {
-        // Support for Indefinite Lengths for Text string.
 
-        // Update and check new length
-        length = this.readIndefiniteStringLength(majorType);
-        if (length === -1) return this.setError(BAD_FORMED);
+      case 3: {
+        // Text string
+        //
+        let data: Uint8Array = new Uint8Array(0);
+        if (length < 0) {
+          // Support for Indefinite Lengths for Text string.
 
-        while (length >= 0) {
-          let tmp = new Uint8Array((data.byteLength + length) as u32);
-          tmp.set(data);
-          tmp.set(this.readArrayBuffer(length as u32), data.byteLength);
+          // Update and check new length
+          length = this.readIndefiniteStringLength(majorType);
+          if (length === -1) return this.setError(BAD_FORMED);
+
+          while (length >= 0) {
+            let tmp = new Uint8Array((data.byteLength + length) as u32);
+            tmp.set(data);
+            tmp.set(this.readArrayBuffer(length as u32), data.byteLength);
+            data = tmp;
+
+            // Update and check new length
+            length = this.readIndefiniteStringLength(majorType);
+            if (length === -1) return this.setError(BAD_FORMED);
+          }
+        } else {
+          // Get the text string from the know length
+          let tmp = new Uint8Array(length as u32);
+          tmp.set(this.readArrayBuffer(length as u32));
           data = tmp;
-
-          // Update and check new length
-          length = this.readIndefiniteStringLength(majorType);
-          if (length === -1) return this.setError(BAD_FORMED);
         }
-      } else {
-        // Get the text string from the know length
-        let tmp = new Uint8Array(length as u32);
-        tmp.set(this.readArrayBuffer(length as u32));
-        data = tmp;
+
+        const stringParsed = String.UTF8.decode(data.buffer);
+        const obj = Value.String(stringParsed);
+
+        return obj;
       }
 
-      const stringParsed = String.UTF8.decode(data.buffer);
-      const obj = Value.String(stringParsed);
-
-      return obj;
-    } else {
-      //
-      return this.setError(NOT_SUPDEEP_ARR_MAP);
+      default:
+        return this.setError(NOT_SUPDEEP_ARR_MAP);
     }
+  }
+
+  private readString(length_: u64): string {
+    const majorType_ = 3;
+    let data: Uint8Array = new Uint8Array(0);
+    if (length_ < 0) {
+      // Update and check new length_____*
+      length_ = this.readIndefiniteStringLength(majorType_);
+      if (length_ === -1) {
+        this.setError(BAD_FORMED);
+        return "";
+      }
+
+      while (length_ >= 0) {
+        let tmp = new Uint8Array((data.byteLength + length_) as u32);
+        tmp.set(data);
+        tmp.set(this.readArrayBuffer(length_ as u32), data.byteLength);
+        data = tmp;
+
+        // Update and check new length_
+        length_ = this.readIndefiniteStringLength(majorType_);
+        if (length_ === -1) {
+          this.setError(BAD_FORMED);
+          return "";
+        }
+      }
+    } else {
+      let tmp = new Uint8Array(length_ as u32);
+      tmp.set(this.readArrayBuffer(length_ as u32));
+      data = tmp;
+    }
+
+    return String.UTF8.decode(data.buffer);
   }
 
   private deserialize(): void {
@@ -354,36 +413,13 @@ export class CBORDecoder {
         break;
       }
       case 3: {
-        let data: Uint8Array = new Uint8Array(0);
-        if (length < 0) {
-          // Update and check new length
-          length = this.readIndefiniteStringLength(majorType);
-          if (length === -1) {
-            this.setError(BAD_FORMED);
-            return;
-          }
+        const valueString = this.readString(length);
 
-          while (length >= 0) {
-            let tmp = new Uint8Array((data.byteLength + length) as u32);
-            tmp.set(data);
-            tmp.set(this.readArrayBuffer(length as u32), data.byteLength);
-            data = tmp;
-
-            // Update and check new length
-            length = this.readIndefiniteStringLength(majorType);
-            if (length === -1) {
-              this.setError(BAD_FORMED);
-              return;
-            }
-          }
-        } else {
-          let tmp = new Uint8Array(length as u32);
-          tmp.set(this.readArrayBuffer(length as u32));
-          data = tmp;
+        if (!this.isError) {
+          this.handler.setString("", valueString);
         }
-
-        this.handler.setString("", String.UTF8.decode(data.buffer));
-
+        // If the above conditional is not met, means that the data is bad
+        // encoded. The error is already set when  this.readString was called
         break;
       }
       case 4: {
@@ -407,11 +443,12 @@ export class CBORDecoder {
         ) {
           // Deserialize key
           const key = this.getKey();
-          if (key === -1) return;
+          if (key.isError) return;
 
           // Deserialize value
           const value = this.getValue();
           if (value.isError) return;
+
           this.handler.addValue(key.toString(), value);
         }
         this.handler.popObject();
