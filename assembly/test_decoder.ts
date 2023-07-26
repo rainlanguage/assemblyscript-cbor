@@ -24,47 +24,20 @@ export function stringToArrayBuffer(val: string): ArrayBuffer {
   return buff;
 }
 
+export function decode_assertError(data: string): boolean {
+  const buff = stringToArrayBuffer(data);
+  const decoder = new CBORDecoder(buff);
+  const res = decoder.parse();
+
+  return res.isError;
+}
+
 export function decode(data: string): Value {
   const buff = stringToArrayBuffer(data);
   const decoder = new CBORDecoder(buff);
   const res = decoder.parse();
 
-  console.log(`Res: ${res}`);
-
   return res;
-
-  // console.log(`res.isArr: ${res.isArr}`);
-  // console.log(`res.isBool: ${res.isBool}`);
-  // console.log(`res.isBytes: ${res.isBytes}`);
-  // console.log(`res.isFloat: ${res.isFloat}`);
-  // console.log(`res.isInteger: ${res.isInteger}`);
-  // console.log(`res.isNull: ${res.isNull}`);
-  // console.log(`res.isNum: ${res.isNum}`);
-  // console.log(`res.isObj: ${res.isObj}`);
-  // console.log(`res.isString: ${res.isString}`);
-  // console.log(`res.isUndefined: ${res.isUndefined}`);
-  // console.log(`res.isSequence: ${res.isSequence}`);
-
-  return res;
-  // const num = <Integer>res;
-  const obj = (<Obj>res).valueOf();
-  const val1 = obj.keys();
-
-  console.log("========");
-  console.log("========");
-  for (let i = 0; i < val1.length; i++) {
-    console.log(`Key:  ${val1[i].toString()}`);
-    console.log(`Value:  ${obj.get(val1[i]).toString()}`);
-    console.log("========");
-  }
-
-  // console.log(`num.toString(): ${num.toString()}`);
-  // const a = num.valueOf();
-  // console.log(`num.valueOf(): ${u64(a)}`);
-
-  // // let f64_value: f64 = i64_value as f64;
-  // return u64(a).toString();
-  // return a;
 }
 
 export function decodeRainCBOR_test(): bool {
@@ -292,7 +265,6 @@ export function decodeArrayInArray(): Array<u64> {
   return participants;
 }
 
-// TODO: Support string keys on maps (not supported yet)
 export function decodeObject(): boolean {
   const buff = stringToArrayBuffer("a2646b65793101646b6579321864");
 
@@ -306,7 +278,6 @@ export function decodeObject(): boolean {
   return val1 == 1 && val2 == 100;
 }
 
-// TODO: Support string keys on maps (not supported yet)
 export function decodeAllInObj(): boolean {
   const fixArray: u8[] = [1, 43, 66, 234, 111];
   const bytesArray: u8[] = [1, 2];
@@ -367,7 +338,6 @@ export function decodeAllInObj(): boolean {
   );
 }
 
-// TODO: Support string keys on maps (not supported yet)
 export function decodeNestedObjs(): bool {
   const buff = stringToArrayBuffer(
     "a1646c766c31a1646c766c32a1646c766c33a1646c766c34a1646c766c351884"
@@ -399,7 +369,7 @@ export function decodeNestedObjs(): bool {
   );
 }
 
-// TODO: Support string keys on maps (not supported yet)
+
 export function decodeAllInArray(): boolean {
   const fixArray: u8[] = [1, 43, 66, 234, 111];
   const bytesArray: u8[] = [1, 2];
