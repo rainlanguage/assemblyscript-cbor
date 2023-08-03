@@ -1,6 +1,6 @@
 {
   "name": "@rainprotocol/assemblyscript-cbor",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "AssemblyScript CBOR enconder/decoder",
   "main": "assembly/index.ts",
   "repository": "https://github.com/rainprotocol/assemblyscript-cbor.git",
