@@ -157,7 +157,7 @@ export class CBORDecoder {
     return length;
   }
 
-  private availableData(amount: number): bool {
+  private availableData(amount: u64): bool {
     return this.offset + amount <= this.dataLength;
   }
 
@@ -323,6 +323,11 @@ export class CBORDecoder {
         }
       }
     } else {
+      if (!this.availableData(length_)) {
+        this.setError(BAD_FORMED);
+        return "";
+      }
+
       let tmp = new Uint8Array(length_ as u32);
       tmp.set(this.readArrayBuffer(length_ as u32));
       data = tmp;
