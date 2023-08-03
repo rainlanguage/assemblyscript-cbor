@@ -369,7 +369,6 @@ export function decodeNestedObjs(): bool {
   );
 }
 
-
 export function decodeAllInArray(): boolean {
   const fixArray: u8[] = [1, 43, 66, 234, 111];
   const bytesArray: u8[] = [1, 2];
