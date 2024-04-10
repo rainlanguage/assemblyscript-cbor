@@ -20,7 +20,8 @@
     "asbuild:test:debug": "asc assembly/test_index.ts --target debug --exportRuntime",
     "asbuild:test": "npm run asbuild:test:debug",
     "test": "node tests/encoding.test.js && node tests/decoding.test.js && node tests/rainCbor.test.js",
-    "test:rain": "npm run asbuild:test && clear; node tests/rainCbor.test.js"
+    "test:rain": "npm run asbuild:test && clear; node tests/rainCbor.test.js",
+    "test:mocha": "mocha tests"
   },
   "type": "module",
   "exports": {
@@ -28,5 +29,8 @@
       "import": "./build/release.js",
       "types": "./build/release.d.ts"
     }
+  },
+  "dependencies": {
+    "mocha": "^10.4.0"
   }
 }
