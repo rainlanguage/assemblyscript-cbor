@@ -5,8 +5,8 @@ import {
   decode_assertError
 } from "../build/debug.js";
 
-describe("test cbor decode", () => {
-  it("Test Decode", () => {
+describe("Rain Cbor", () => {
+  it("Test rain cbor", () => {
 
     const result = decodeRainCBOR_test();
     assert.equal(result, true, "Failed when decoded a rain cbor sequence");
