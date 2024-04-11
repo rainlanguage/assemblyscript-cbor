@@ -16,6 +16,7 @@ import {
     decodeAllInObj,
     decodeNestedObjs,
     decodeArrayInArray,
+    decode
 } from "../build/debug.js";
 
 let result;
@@ -72,6 +73,10 @@ describe("Decoding", () => {
     it("Test decodeObject function", () => {
         result = decodeObject()
         assert.equal(result, true);
+    })
+    it("Test decode function", () => {
+        result = decode("0x010101")
+        assert.deepEqual(result, {});
     })
 })
 
