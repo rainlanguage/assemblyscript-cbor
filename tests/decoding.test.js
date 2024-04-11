@@ -11,12 +11,11 @@ import {
     decodeObject,
     decodeArrayU8,
     decodeArray,
-    decodeAllInArray,
     decodeBytes,
-    decodeAllInObj,
-    decodeNestedObjs,
+    decodeRainCBOR_test,
     decodeArrayInArray,
-    decode
+    decode,
+    decode_assertError,
 } from "../build/debug.js";
 
 let result;
@@ -77,6 +76,14 @@ describe("Decoding", () => {
     it("Test decode function", () => {
         result = decode("0x010101")
         assert.deepEqual(result, {});
+    })
+    it("Test decodeRainCBOR_test function", () => {
+        result = decodeRainCBOR_test()
+        assert.deepEqual(result, true);
+    })
+    it("Test decode_assertError function when error", () => {
+        result = decode_assertError("0101")
+        assert.equal(result, false);
     })
 })
 
