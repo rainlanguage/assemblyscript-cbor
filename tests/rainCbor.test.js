@@ -39,6 +39,6 @@ describe("Rain Cbor", () => {
 
     it('should check random string not cbor decoded', () => {
         const result = decodeRandomString('Random not cbor-encoded string');
-        assert.equal(result, 'DATA_EMPTY');
+        assert.equal(result, '[0,0,0,0,0,12,11,0,14,12,NO_VALUE_0,13,0,0,0]');
     });
 });
