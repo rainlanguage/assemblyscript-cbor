@@ -20,4 +20,14 @@ describe("Rain Cbor", () => {
         assert.equal(resultError, true);
 
     });
+
+    it('should return false for an empty input string', () => {
+        const resultError = decodeRainCBOR_test("");
+        assert.equal(resultError, false);
+    });
+
+    it('should return false for a non-CBOR encoded string', () => {
+        const resultError = decodeRainCBOR_test('this is not CBOR encoded');
+        assert.equal(resultError, false);
+    });
 });
