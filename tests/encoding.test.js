@@ -41,8 +41,7 @@ let result;
 
 describe("Encoding", () => {
     it("Test encodeRainDocument function", () => {
-        result = encodeRainDocument();
-
+        result = encodeRainDocument("11223344");
         assert.equal(
             "a3004411223344011bffc21bbf86cc199b02706170706c69636174696f6e2f63626f72",
             buf2hex(result)
