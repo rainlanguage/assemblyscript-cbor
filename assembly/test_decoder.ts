@@ -463,3 +463,11 @@ export function decodeAllInArray(): boolean {
     bytesResult
   );
 }
+
+export function decodeRandomString(dataStr:string): string {
+  const buff = stringToArrayBuffer(dataStr);
+
+  const decoder = new CBORDecoder(buff);
+  const res = decoder.parse();
+  return res.toString();
+}

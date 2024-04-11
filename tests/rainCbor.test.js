@@ -1,7 +1,8 @@
 import {strict as assert} from "assert";
 import {
     decodeRainCBOR_test,
-    decode_assertError
+    decode_assertError,
+    decodeRandomString
 } from "../build/debug.js";
 
 describe("Rain Cbor", () => {
@@ -29,5 +30,10 @@ describe("Rain Cbor", () => {
     it('should return false for a non-CBOR encoded string', () => {
         const result = decodeRainCBOR_test('this is not CBOR encoded');
         assert.equal(result, false);
+    });
+
+    it('should return "Data_Empty" if passed empty string', () => {
+        const result = decodeRandomString('');
+        assert.equal(result, 'DATA_EMPTY');
     });
 });
