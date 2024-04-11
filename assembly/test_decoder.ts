@@ -40,10 +40,8 @@ export function decode(data: string): Value {
   return res;
 }
 
-export function decodeRainCBOR_test(): bool {
+export function decodeRainCBOR_test(rainSequenceEncoded: string): bool {
   // Use: https://cbor.me/
-  const rainSequenceEncoded =
-    "A3004411223344011BFFC21BBF86CC199B02706170706C69636174696F6E2F63626F72A3004412345678011BFFE5FFB4A3FF2CDE02706170706C69636174696F6E2F6A736F6E";
   const buff = stringToArrayBuffer(rainSequenceEncoded);
   const decoder = new CBORDecoder(buff);
   const res = decoder.parse();
