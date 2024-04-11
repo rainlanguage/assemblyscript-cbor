@@ -8,7 +8,7 @@ import {
 describe("Rain Cbor", () => {
   it("Test rain cbor", () => {
 
-    const result = decodeRainCBOR_test();
+    const result = decodeRainCBOR_test("A3004411223344011BFFC21BBF86CC199B02706170706C69636174696F6E2F63626F72A3004412345678011BFFE5FFB4A3FF2CDE02706170706C69636174696F6E2F6A736F6E");
     assert.equal(result, true, "Failed when decoded a rain cbor sequence");
 
     const resultError = decode_assertError(
