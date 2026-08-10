@@ -1,6 +1,6 @@
 import { CBOREncoder } from "./encoder";
 
-export function encodeRainDocument(): ArrayBuffer {
+export function encodeRainDocument(dataStr:string): ArrayBuffer {
   const encoder = new CBOREncoder();
   encoder.addObject(3);
 
@@ -9,10 +9,9 @@ export function encodeRainDocument(): ArrayBuffer {
 
   //  h'11223344' = [28, 74, 54,020]
   const arr: u8[] = [];
-  const bytes = "11223344";
   let lengthBytes = 0;
-  for (let i = 0; i < bytes.length; i += 2) {
-    const byte = bytes.substr(i, 2);
+  for (let i = 0; i < dataStr.length; i += 2) {
+    const byte = dataStr.substr(i, 2);
     const value = parseInt(byte, 16);
     arr.push(u8(value));
     lengthBytes += 1;
